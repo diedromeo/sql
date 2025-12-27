@@ -1,9 +1,10 @@
 from flask import Flask, request
 import sqlite3
+import os
 
 app = Flask(__name__)
 
-# ---------------- DATABASE SETUP ----------------
+# ---------------- DATABASE INIT ----------------
 def init_db():
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
@@ -22,34 +23,42 @@ def init_db():
 
 init_db()
 
-# ---------------- LOGIN ROUTE ----------------
+# ---------------- ROUTE ----------------
 @app.route("/", methods=["GET", "POST"])
 def login():
     error = ""
+    success = False
 
     if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
 
         conn = sqlite3.connect("users.db")
         c = conn.cursor()
 
-        # ❌ INTENTIONALLY VULNERABLE QUERY (CTF PURPOSE)
-        query = f"""
-        SELECT * FROM users
-        WHERE username = '{username}' AND password = '{password}'
-        """
-        print("[DEBUG QUERY]:", query)
+        # ⚠️ SAFE DEMO MODE
+        # Still shows auth-bypass concept but Render-safe
+        if "'" in password or "OR" in password.upper():
+            success = True
+        else:
+            c.execute(
+                "SELECT * FROM users WHERE username=? AND password=?",
+                (username, password)
+            )
+            if c.fetchone():
+                success = True
 
-        c.execute(query)
-        user = c.fetchone()
         conn.close()
 
-        if user:
+        if success:
             return success_page()
         else:
             error = "Invalid credentials"
 
+    return login_page(error)
+
+# ---------------- HTML PAGES ----------------
+def login_page(error):
     return f"""
 <!DOCTYPE html>
 <html>
@@ -88,16 +97,14 @@ button {{
   color:white;
   border-radius:8px;
   font-size:16px;
-  cursor:pointer;
 }}
 .error {{
   color:#f87171;
-  margin-top:10px;
 }}
 .hint {{
   opacity:.6;
-  margin-top:20px;
   font-size:13px;
+  margin-top:15px;
 }}
 </style>
 </head>
@@ -114,15 +121,13 @@ button {{
   </form>
 
   <div class="error">{error}</div>
-
-  <div class="hint">Authorized access only</div>
+  <div class="hint">For demo & learning only</div>
 </div>
 
 </body>
 </html>
 """
 
-# ---------------- SUCCESS PAGE ----------------
 def success_page():
     return """
 <!DOCTYPE html>
@@ -140,11 +145,10 @@ body {
   height:100vh;
 }
 .container {
-  max-width:600px;
+  max-width:650px;
   background:#111827;
   padding:40px;
   border-radius:14px;
-  box-shadow:0 20px 40px rgba(0,0,0,.6);
 }
 .flag {
   color:#22c55e;
@@ -152,12 +156,11 @@ body {
   margin:15px 0;
 }
 .typing {
+  font-family:monospace;
+  white-space:pre-line;
+  margin-top:20px;
   border-left:3px solid #22c55e;
   padding-left:15px;
-  white-space:pre-line;
-  font-family:monospace;
-  font-size:14px;
-  margin-top:20px;
 }
 </style>
 </head>
@@ -173,21 +176,21 @@ body {
 const text = `
 What just happened?
 
-This login portal was vulnerable to SQL Injection.
+This portal demonstrates Authentication Bypass.
 
-Your input was directly added to the SQL query
-without proper sanitization.
+In vulnerable applications,
+user input is trusted blindly.
 
-This allowed you to modify the query logic
-and bypass authentication.
+Attackers can manipulate logic
+to gain access without real credentials.
 
-This attack is known as:
-Authentication Bypass using SQL Injection.
+This technique is called:
+SQL Injection – Authentication Bypass
 
-In real applications:
-• Always use parameterized queries
+Fix in real apps:
+• Use parameterized queries
 • Never trust user input
-• Validate and sanitize everything
+• Validate everything
 `;
 
 let i = 0;
@@ -204,6 +207,8 @@ typeEffect();
 </body>
 </html>
 """
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
 
+# ---------------- RENDER SAFE ENTRY ----------------
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
