@@ -1,4 +1,4 @@
-from flask import Flask, send_file, Response
+from flask import Flask, request, Response
 import os
 
 app = Flask(__name__)
@@ -39,7 +39,6 @@ section{
 video{
   width:100%;
   border-radius:12px;
-  outline:none;
 }
 footer{
   text-align:center;
@@ -60,7 +59,6 @@ footer{
     <h2>Robot Demo – Part 1</h2>
     <video controls>
       <source src="/video1.mp4" type="video/mp4">
-      Your browser does not support video.
     </video>
   </div>
 
@@ -68,16 +66,7 @@ footer{
     <h2>Robot Demo – Part 2</h2>
     <video controls>
       <source src="/video2.mp4" type="video/mp4">
-      Your browser does not support video.
     </video>
-  </div>
-
-  <div class="card">
-    <h2>About</h2>
-    <p>
-      This portal showcases robotics demos from DevFest Nashik.
-      Built for developers, by developers.
-    </p>
   </div>
 </section>
 
@@ -89,29 +78,64 @@ footer{
 </html>
 """
 
-# ---------------- VIDEO ROUTES (NO STATIC) ----------------
+# ---------------- RANGE-SAFE VIDEO STREAMING ----------------
+def stream_video(path):
+    file_size = os.path.getsize(path)
+    range_header = request.headers.get('Range', None)
+
+    if range_header:
+        byte1, byte2 = 0, None
+        match = range_header.replace('bytes=', '').split('-')
+        byte1 = int(match[0])
+        if len(match) > 1 and match[1]:
+            byte2 = int(match[1])
+
+        length = file_size - byte1
+        if byte2:
+            length = byte2 - byte1 + 1
+
+        with open(path, 'rb') as f:
+            f.seek(byte1)
+            data = f.read(length)
+
+        rv = Response(data, 206, mimetype='video/mp4',
+                      content_type='video/mp4',
+                      direct_passthrough=True)
+        rv.headers.add(
+            'Content-Range',
+            f'bytes {byte1}-{byte1 + length - 1}/{file_size}'
+        )
+        rv.headers.add('Accept-Ranges', 'bytes')
+        return rv
+
+    # Fallback (no range)
+    with open(path, 'rb') as f:
+        data = f.read()
+
+    return Response(data, mimetype='video/mp4')
+
 @app.route("/video1.mp4")
 def video1():
-    return send_file(os.path.join(BASE_DIR, "video1.mp4"), mimetype="video/mp4")
+    return stream_video(os.path.join(BASE_DIR, "video1.mp4"))
 
 @app.route("/video2.mp4")
 def video2():
-    return send_file(os.path.join(BASE_DIR, "video2.mp4"), mimetype="video/mp4")
+    return stream_video(os.path.join(BASE_DIR, "video2.mp4"))
 
 # ---------------- REAL ROBOTS.TXT ----------------
 @app.route("/robots.txt")
 def robots():
-    content = """User-agent: *
+    return Response(
+        """User-agent: *
 Disallow: /admin
 Disallow: /internal
 Disallow: /secret
 
-# 👀 curious developer detected :-)
-# robots.txt is real here, not JS fake
-
+# 👀 real dev spotted
 FLAG: ctf7{robots_txt_real_flask}
-"""
-    return Response(content, mimetype="text/plain")
+""",
+        mimetype="text/plain"
+    )
 
 # ---------------- ENTRY POINT ----------------
 if __name__ == "__main__":
